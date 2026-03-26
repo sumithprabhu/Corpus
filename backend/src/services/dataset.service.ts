@@ -88,6 +88,7 @@ export async function uploadDataset(
   const sizeInBytes = bufferToUpload.length;
   const costWei = getStorageCost();
   const userAddress = ownerWalletAddress as `0x${string}`;
+  const datasetHash = keccak256(new Uint8Array(bufferToUpload)) as `0x${string}`;
 
   if (treasury.isTreasuryConfigured()) {
     const balance = await treasury.getUserBalance(userAddress);
@@ -109,7 +110,6 @@ export async function uploadDataset(
   }
 
   if (treasury.isTreasuryConfigured()) {
-    const datasetHash = keccak256(new Uint8Array(bufferToUpload)) as `0x${string}`;
     try {
       await treasury.recordAndDeduct(
         userAddress,
@@ -148,6 +148,8 @@ export async function uploadDataset(
     compressed,
     compressionFormat,
     storageCost: costWei.toString(),
+    sizeInBytes,
+    datasetHash,
     uploadTimestamp,
     createdAt: uploadTimestamp,
   });
@@ -314,6 +316,8 @@ export async function getDatasetMetadata(cid: string, ownerApiKey: string) {
     compressed: meta.compressed ?? false,
     compressionFormat: meta.compressionFormat ?? "",
     storageCost: meta.storageCost ?? "0",
+    sizeInBytes: meta.sizeInBytes ?? 0,
+    datasetHash: meta.datasetHash ?? "",
     uploadTimestamp: meta.uploadTimestamp ?? meta.createdAt,
     createdAt: meta.createdAt,
   };
@@ -351,6 +355,8 @@ export async function listDatasets(ownerApiKey: string) {
     compressed: d.compressed ?? false,
     compressionFormat: d.compressionFormat ?? "",
     storageCost: d.storageCost ?? "0",
+    sizeInBytes: d.sizeInBytes ?? 0,
+    datasetHash: d.datasetHash ?? "",
     uploadTimestamp: d.uploadTimestamp ?? d.createdAt,
     createdAt: d.createdAt,
   }));

@@ -1,3 +1,4 @@
+import "@/lib/ssr-storage-polyfill"
 import { getDefaultConfig } from "@rainbow-me/rainbowkit"
 import { http } from "wagmi"
 

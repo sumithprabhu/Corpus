@@ -5,12 +5,15 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { getApiKey, apiGet, API_BASE } from "@/lib/api"
-import { Database, HardDrive, Wallet, Upload, Coins, Clock, ArrowRight } from "lucide-react"
+import { UploadActivityChart } from "@/components/dashboard/upload-activity-chart"
+import { Database, HardDrive, Wallet, Upload, Coins, Clock } from "lucide-react"
 
 type DatasetItem = {
   cid: string
   name?: string
   storageCost?: string
+  sizeInBytes?: number
+  datasetHash?: string
   uploadTimestamp?: string
   createdAt: string
   treasuryRecorded?: boolean
@@ -67,12 +70,14 @@ export default function OverviewPage() {
   }, [load])
 
   const totalCost = datasets.reduce((acc, d) => acc + BigInt(d.storageCost || "0"), BigInt(0))
+  const totalBytes = datasets.reduce((acc, d) => acc + BigInt(d.sizeInBytes || 0), BigInt(0))
 
   const metrics = [
     { label: "Datasets Stored", value: loading ? "—" : String(datasets.length), icon: Database },
     { label: "Total Uploads", value: loading ? "—" : String(datasets.length), icon: Upload },
     { label: "Available Treasury Balance", value: loading ? "—" : (balance != null ? formatWei(balance) : "—"), icon: Wallet },
     { label: "Storage Cost Spent", value: loading ? "—" : formatWei(totalCost.toString()), icon: Coins },
+    { label: "Total Storage Used", value: loading ? "—" : `${Number(totalBytes) / (1024 * 1024) < 0.01 ? `${Number(totalBytes) / 1024} KB` : `${(Number(totalBytes) / (1024 * 1024)).toFixed(2)} MB`}`, icon: HardDrive },
     { label: "Cost per Upload", value: prepare ? formatWei(prepare.debitPerUploadWei) : "—", icon: HardDrive },
     { label: "Cost per Month", value: prepare ? formatWei(prepare.debitPerMonthWei) : "—", icon: Clock },
   ]
@@ -108,12 +113,10 @@ export default function OverviewPage() {
         <Card className="border-2 border-foreground">
           <CardHeader className="border-b-2 border-foreground">
             <CardTitle className="text-base font-mono uppercase tracking-wider">Storage & uploads</CardTitle>
-            <CardDescription className="text-xs font-mono">Upload activity (chart placeholder)</CardDescription>
+            <CardDescription className="text-xs font-mono">Uploads per day (last 14 days)</CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
-            <div className="h-40 flex items-center justify-center border-2 border-dashed border-muted-foreground/30">
-              <span className="text-[10px] font-mono uppercase text-muted-foreground">Chart: storage over time</span>
-            </div>
+            <UploadActivityChart datasets={datasets} />
           </CardContent>
         </Card>
 

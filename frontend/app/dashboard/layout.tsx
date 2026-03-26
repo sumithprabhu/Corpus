@@ -11,6 +11,7 @@ import {
   Database,
   Shield,
   CreditCard,
+  Boxes,
   Activity,
   Settings,
 } from "lucide-react"
@@ -18,6 +19,7 @@ import {
 const SIDEBAR_LINKS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/datasets", label: "Datasets", icon: Database },
+  { href: "/dashboard/models", label: "Models", icon: Boxes },
   { href: "/dashboard/security", label: "Security & Access", icon: Shield },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
   { href: "/dashboard/activity", label: "Activity", icon: Activity },

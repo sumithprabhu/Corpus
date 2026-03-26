@@ -251,11 +251,7 @@ function PricingCard({ tier, index }: { tier: Tier; index: number }) {
 
       {/* CTA */}
       <div className="px-5 pb-5 pt-3">
-        <Link
-          href={tier.id === "docs" ? "https://github.com/sumithprabhu/Corpus" : "/dashboard"}
-          target={tier.id === "docs" ? "_blank" : undefined}
-          rel={tier.id === "docs" ? "noopener noreferrer" : undefined}
-        >
+        <Link href={tier.id === "docs" ? "/docs" : "/dashboard"}>
           <motion.span
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}

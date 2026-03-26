@@ -16,6 +16,10 @@ export interface IDataset extends Document {
   /** Compression format used (e.g. "gzip"). Only set when compressed is true. */
   compressionFormat?: string;
   storageCost?: string; // wei as string for precision (optional for legacy docs)
+  /** Stored (post-encrypt, post-compress) size used for onchain record. */
+  sizeInBytes?: number;
+  /** keccak256 of stored bytes (post-encrypt, post-compress) used for onchain record. */
+  datasetHash?: string;
   uploadTimestamp?: Date;
   createdAt: Date;
 }
@@ -68,6 +72,14 @@ const DatasetSchema = new Schema<IDataset>(
     storageCost: {
       type: String,
       default: "0",
+    },
+    sizeInBytes: {
+      type: Number,
+      default: 0,
+    },
+    datasetHash: {
+      type: String,
+      default: "",
     },
     uploadTimestamp: {
       type: Date,

@@ -21,4 +21,22 @@ export async function apiGet<T>(path: string): Promise<T> {
   return data as T
 }
 
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: apiHeaders(),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string }).error || res.statusText)
+  return data as T
+}
+
+export async function apiDelete<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers: apiHeaders() })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string }).error || res.statusText)
+  return data as T
+}
+
 export { API_BASE }
