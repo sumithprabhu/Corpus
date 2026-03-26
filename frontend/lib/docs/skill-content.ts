@@ -29,6 +29,26 @@ Content-Type: application/json
 
 Store \`apiKey\`. The wallet must match the user for treasury balance checks.
 
+## (Optional) Manage multiple keys
+
+\`\`\`http
+GET {CORPUS_API_BASE}/user/keys
+x-api-key: {CORPUS_API_KEY}
+\`\`\`
+
+\`\`\`http
+POST {CORPUS_API_BASE}/user/keys
+x-api-key: {CORPUS_API_KEY}
+Content-Type: application/json
+
+{"name":"Production"}
+\`\`\`
+
+\`\`\`http
+DELETE {CORPUS_API_BASE}/user/keys/{id}
+x-api-key: {CORPUS_API_KEY}
+\`\`\`
+
 ## Required header
 
 \`\`\`
@@ -71,6 +91,8 @@ x-api-key: {CORPUS_API_KEY}
 \`\`\`
 
 Append \`?metadata=1\` for JSON only.
+
+Metadata includes (when present): \`storageCost\`, \`sizeInBytes\`, \`datasetHash\`, encryption/compression fields.
 
 ## Treasury balance
 

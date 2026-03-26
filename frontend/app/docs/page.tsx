@@ -10,6 +10,7 @@ const OVERVIEW_DIAGRAM = `flowchart LR
     R[Routes]
     DS[Dataset service]
     TR[Treasury helper]
+    MS[Model service]
   end
   subgraph External
     M[(MongoDB)]
@@ -18,9 +19,11 @@ const OVERVIEW_DIAGRAM = `flowchart LR
   end
   UI --> R
   R --> DS
+  R --> MS
   DS --> TR
   DS --> M
   DS --> F
+  MS --> M
   TR --> C`
 
 export default function DocsOverviewPage() {

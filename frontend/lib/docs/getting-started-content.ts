@@ -27,6 +27,13 @@ Response includes \`apiKey\`. Send it on every protected request as:
 x-api-key: <your-api-key>
 \`\`\`
 
+### Optional: create additional keys
+
+If you want separate keys for environments (dev/prod), you can create and revoke keys from:
+
+- Dashboard → **Security & Access**
+- API: \`POST /user/keys\`, \`GET /user/keys\`, \`DELETE /user/keys/:id\`
+
 ## 3. Check costs (treasury)
 
 If treasury is enabled on the backend:
@@ -57,6 +64,10 @@ Optional form fields: \`name\` (unique per user), \`encrypt\`, \`previousCID\` (
 
 \`POST /model/register\` with JSON: \`datasetCID\`, \`modelArtifactCID\`, \`trainingConfigHash\`, \`trainingCodeHash\`.
 
+You can also do this from the dashboard:
+
+- Dashboard → **Models**
+
 ## Next steps
 
 - **Contracts** — on-chain addresses and \`StorageTreasury\` behavior.
@@ -77,7 +88,8 @@ You are integrating with the Corpus HTTP API. Do not hallucinate endpoints; use 
 ## Auth flow
 
 1. \`POST \${BASE_URL}/user/create\` JSON \`{"walletAddress":"<0x...>"}\` → store \`apiKey\`.
-2. All subsequent dataset/model/treasury calls include \`x-api-key\`.
+2. Optional: \`POST \${BASE_URL}/user/keys\` to mint additional keys (same wallet); \`DELETE /user/keys/:id\` to revoke.
+3. All subsequent dataset/model/treasury calls include \`x-api-key\`.
 
 ## Cost gate (treasury)
 
@@ -100,6 +112,7 @@ Before upload if treasury configured: \`GET \${BASE_URL}/dataset/prepare\` → r
 ## Model runs
 
 - \`POST \${BASE_URL}/model/register\` JSON required fields: \`datasetCID\`, \`modelArtifactCID\`, \`trainingConfigHash\`, \`trainingCodeHash\`.
+  - Dashboard route (UI): \`/dashboard/models\`
 
 ## Errors
 
