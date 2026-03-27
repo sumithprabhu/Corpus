@@ -52,6 +52,10 @@ export type {
   CorpusConfig,
   HealthResponse,
   CreateUserResponse,
+  ApiKeyItem,
+  ListKeysResponse,
+  CreateKeyResponse,
+  RevokeKeyResponse,
   DatasetItem,
   DatasetPrepareResponse,
   DatasetUploadResponse,
@@ -67,6 +71,10 @@ export type {
   ModelGetResponse,
   TreasuryBalanceResponse,
   TreasuryDatasetsResponse,
+  DatasetShareItem,
+  ListSharesResponse,
+  ShareDatasetResponse,
+  RevokeShareResponse,
 } from "./types.js";
 export type { UploadOptions, AddVersionByNameOptions } from "./dataset.js";
 

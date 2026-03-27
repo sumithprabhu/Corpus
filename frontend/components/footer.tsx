@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { motion } from "framer-motion"
 
 const ease = [0.22, 1, 0.36, 1] as const
@@ -15,9 +16,12 @@ export function Footer() {
     >
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-mono tracking-[0.15em] uppercase font-bold text-foreground">
-            Corpus
-          </span>
+          <div className="flex items-center gap-2">
+            <Image src="/logo.png" alt="Corpus" width={28} height={28} className="object-contain dark:invert" />
+            <span className="text-xs font-mono tracking-[0.15em] uppercase font-bold text-foreground">
+              Corpus
+            </span>
+          </div>
           <span className="text-[10px] font-mono tracking-widest text-muted-foreground">
             Dataset & model provenance on Filecoin
           </span>

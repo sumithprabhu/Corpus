@@ -18,6 +18,9 @@ router.put("/by-name/:name/default", datasetController.setDefaultByName);
 router.delete("/by-name/:name", datasetController.deleteByName);
 router.get("/by-name/:name", datasetController.getByName);
 router.get("/:cid/raw", datasetController.getRawByCid);
+router.get("/:cid/shares", datasetController.listShares);
+router.post("/:cid/share", datasetController.shareDataset);
+router.delete("/:cid/share/:walletAddress", datasetController.revokeShare);
 router.delete("/:cid", datasetController.deleteByCid);
 router.get("/:cid", datasetController.getByCid);
 

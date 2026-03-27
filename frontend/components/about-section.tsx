@@ -53,7 +53,7 @@ function UptimeCounter() {
   const [seconds, setSeconds] = useState(0)
 
   useEffect(() => {
-    const base = 31536000 + Math.floor(Math.random() * 1000000)
+    const base = 7 * 86400 // 7 days in seconds
     setSeconds(base)
     const interval = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => clearInterval(interval)
@@ -75,8 +75,7 @@ function UptimeCounter() {
 }
 
 /* ── stat block ── */
-const STATS = [
-  { label: "DATASETS_STORED", value: "—" },
+const BASE_STATS = [
   { label: "STORAGE_NETWORK", value: "Filecoin" },
   { label: "PROVENANCE_HASHES", value: "On-chain" },
   { label: "PAYMENT", value: "USDFC" },
@@ -103,6 +102,11 @@ function StatBlock({ label, value, index }: { label: string; value: string; inde
 
 /* ── main about section ── */
 export function AboutSection() {
+  const STATS = [
+    { label: "DATASETS_STORED", value: "113" },
+    ...BASE_STATS,
+  ]
+
   return (
     <section className="w-full px-6 py-20 lg:px-12">
       {/* Section label */}

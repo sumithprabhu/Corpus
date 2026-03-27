@@ -95,13 +95,13 @@ const TIERS: Tier[] = [
       { text: "Filecoin storage (Synapse)", included: true },
       { text: "Treasury: deposit USDFC", included: true },
     ],
-    cta: "GET API KEY",
+    cta: "Get API Key",
     highlighted: false,
   },
   {
     id: "storage",
     name: "STORAGE",
-    price: "—",
+    price: "PAYG",
     period: " per month",
     tag: "PAY AS YOU GO",
     description: "Storage billed per month. Deposit to treasury; cost per upload + per month.",
@@ -113,14 +113,14 @@ const TIERS: Tier[] = [
       { text: "Compression when beneficial", included: true },
       { text: "Dashboard: top-up & keys", included: true },
     ],
-    cta: "GO TO DASHBOARD",
+    cta: "Go to Dashboard",
     highlighted: true,
   },
   {
     id: "docs",
     name: "DEVELOPERS",
-    price: "—",
-    period: "",
+    price: "FREE",
+    period: " to integrate",
     tag: null,
     description: "REST API, corpus-sdk (npm), and docs. Integrate in minutes.",
     features: [
@@ -131,14 +131,14 @@ const TIERS: Tier[] = [
       { text: "Delete by CID or by name", included: true },
       { text: "Docs & examples", included: true },
     ],
-    cta: "READ DOCS",
+    cta: "Read Docs",
     highlighted: false,
   },
 ]
 
 /* ── single pricing card ── */
 function PricingCard({ tier, index }: { tier: Tier; index: number }) {
-  const isCustom = tier.price === "CUSTOM" || tier.price === "—"
+  const isCustom = !/^\d/.test(tier.price)
 
   return (
     <motion.div
@@ -177,7 +177,7 @@ function PricingCard({ tier, index }: { tier: Tier; index: number }) {
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-baseline gap-1">
           {isCustom ? (
-            <span className="text-3xl lg:text-4xl font-mono font-bold tracking-tight">{tier.price}</span>
+            <span className="text-2xl lg:text-3xl font-mono font-bold tracking-widest uppercase opacity-80">{tier.price}</span>
           ) : (
             <span className="text-3xl lg:text-4xl">
               <ScramblePrice target={tier.price} />
@@ -261,10 +261,11 @@ function PricingCard({ tier, index }: { tier: Tier; index: number }) {
                 : "bg-foreground text-background"
             }`}
           >
-            <span className="flex items-center justify-center w-9 h-9 bg-[#ea580c]">
+            <span className="flex items-center justify-center w-9 h-9 bg-[#ea580c] shrink-0">
               <ArrowRight size={14} strokeWidth={2} className="text-background" />
             </span>
-            <span className="flex-1 py-2.5">{tier.cta}</span>
+            <span className="flex-1 py-2.5 text-center">{tier.cta}</span>
+            <span className="w-9 shrink-0" />
           </motion.span>
         </Link>
       </div>

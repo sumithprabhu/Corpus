@@ -9,6 +9,9 @@ import type {
   SetDefaultResponse,
   DeleteByCidResponse,
   DeleteByNameResponse,
+  ListSharesResponse,
+  ShareDatasetResponse,
+  RevokeShareResponse,
 } from "./types.js";
 import { createClient } from "./client.js";
 
@@ -150,6 +153,34 @@ export function datasetApi(config: CorpusConfig) {
     /** DELETE /dataset/by-name/:name — Delete all versions of a named dataset. */
     async deleteByName(name: string): Promise<DeleteByNameResponse> {
       return client.delete<DeleteByNameResponse>(`/dataset/by-name/${encodeURIComponent(name)}`);
+    },
+
+    // ---- Sharing (ACL) ----
+
+    /**
+     * GET /dataset/:cid/shares — List all wallets with read access. Owner-only.
+     */
+    async listShares(cid: string): Promise<ListSharesResponse> {
+      return client.get<ListSharesResponse>(`/dataset/${encodeURIComponent(cid)}/shares`);
+    },
+
+    /**
+     * POST /dataset/:cid/share — Grant read access to another wallet. Owner-only.
+     * Shared wallets can retrieve and decrypt the dataset using their own API key.
+     */
+    async share(cid: string, walletAddress: string): Promise<ShareDatasetResponse> {
+      if (!walletAddress?.trim()) throw new Error("walletAddress is required");
+      return client.post<ShareDatasetResponse>(`/dataset/${encodeURIComponent(cid)}/share`, { walletAddress });
+    },
+
+    /**
+     * DELETE /dataset/:cid/share/:walletAddress — Revoke read access for a wallet. Owner-only.
+     */
+    async revokeShare(cid: string, walletAddress: string): Promise<RevokeShareResponse> {
+      if (!walletAddress?.trim()) throw new Error("walletAddress is required");
+      return client.delete<RevokeShareResponse>(
+        `/dataset/${encodeURIComponent(cid)}/share/${encodeURIComponent(walletAddress)}`
+      );
     },
   };
 }

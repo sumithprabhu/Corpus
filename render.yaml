@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: corpus-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: MONGODB_URI
+        sync: false
+      - key: ENCRYPTION_SECRET
+        sync: false
+      - key: FILECOIN_NETWORK
+        value: calibration
+      - key: SYNAPSE_OPERATOR_PRIVATE_KEY
+        sync: false
+      - key: TREASURY_CONTRACT_ADDRESS
+        sync: false
+      - key: RPC_URL
+        sync: false
+      - key: TREASURY_EXECUTOR_PRIVATE_KEY
+        sync: false
+      - key: TREASURY_EXECUTOR_ADDRESS
+        sync: false
+      - key: TREASURY_CHAIN_ID
+        value: "314159"
+      - key: USDFC_TOKEN_ADDRESS
+        sync: false
+      - key: STORAGE_COST_FIXED_WEI
+        sync: false
+      - key: BILLING_SECRET
+        sync: false

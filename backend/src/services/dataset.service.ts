@@ -1,7 +1,9 @@
 import { Dataset } from "../models/Dataset.model.js";
+import { DatasetShare } from "../models/DatasetShare.model.js";
 import {
   uploadDataset as synapseUpload,
   retrieveDataset as synapseRetrieve,
+  getEstimatedMonthlyCost,
 } from "./synapse.service.js";
 import { encryptDataset, decryptDataset } from "../utils/encryption.js";
 import { compressForStorage, decompressFromStorage } from "../utils/compression.js";
@@ -15,14 +17,17 @@ const COMPRESSION_FORMAT_GZIP = "gzip";
 
 /**
  * Prepare: return the cost debited per upload and per month. Storage is billed per month; access is not permanent.
+ * Uses dynamic Synapse pricing for a 1MB reference file if available; falls back to static env vars.
  */
-export function getPrepareCost(): {
+export async function getPrepareCost(): Promise<{
   debitPerUploadWei: string;
   debitPerMonthWei: string;
   description: string;
-} {
-  const perUpload = getStorageCost();
-  const perMonth = getStorageCostPerMonth();
+}> {
+  // Try to get dynamic rate for a 1MB reference file from Synapse
+  const dynamicRate = await getEstimatedMonthlyCost(1024 * 1024).catch(() => null);
+  const perUpload = dynamicRate ?? getStorageCost();
+  const perMonth = dynamicRate ?? getStorageCostPerMonth();
   return {
     debitPerUploadWei: perUpload.toString(),
     debitPerMonthWei: perMonth.toString(),
@@ -53,7 +58,7 @@ export type UploadOptions = {
 export async function uploadDataset(
   fileBuffer: Buffer,
   options: UploadOptions
-): Promise<{ pieceCID: string; storageCost: string }> {
+): Promise<{ pieceCID: string; storageCost: string; monthlyStorageCostWei: string; treasuryFailed?: boolean }> {
   const {
     ownerApiKey,
     ownerWalletAddress,
@@ -63,7 +68,9 @@ export async function uploadDataset(
     isDefault = false,
   } = options;
 
-  if (name != null && name !== "") {
+  // Block duplicate names only on initial upload (no previousCID = first version).
+  // When adding a version to an existing named dataset, the name is intentionally reused.
+  if (name != null && name !== "" && !previousCID) {
     const existing = await Dataset.findOne({ ownerApiKey, name: name.trim() });
     if (existing) {
       throw new Error(`Dataset name "${name}" already exists. Use POST /dataset/by-name/:name/version to add a new version.`);
@@ -102,13 +109,17 @@ export async function uploadDataset(
   }
 
   let pieceCID: string;
+  let monthlyStorageCostWei: bigint = getStorageCostPerMonth();
   try {
-    pieceCID = await synapseUpload(bufferToUpload, ownerWalletAddress);
+    const synapseResult = await synapseUpload(bufferToUpload, ownerWalletAddress);
+    pieceCID = synapseResult.pieceCid;
+    monthlyStorageCostWei = synapseResult.estimatedMonthlyWei;
   } catch (err) {
     console.error("[dataset.service] Synapse upload failed:", err);
     throw err;
   }
 
+  let treasuryFailed = false;
   if (treasury.isTreasuryConfigured()) {
     try {
       await treasury.recordAndDeduct(
@@ -119,7 +130,7 @@ export async function uploadDataset(
         datasetHash
       );
     } catch (err) {
-      console.error("[dataset.service] Treasury recordAndDeduct failed (upload already done):", err);
+      console.error("[dataset.service] Treasury recordAndDeduct failed (upload already done, will retry):", err);
       await enqueuePendingRecord(
         ownerWalletAddress,
         pieceCID,
@@ -128,9 +139,8 @@ export async function uploadDataset(
         datasetHash,
         err instanceof Error ? err.message : String(err)
       );
-      throw new Error(
-        "Storage record/deduction failed. Upload succeeded; recording will be retried. Please contact support if the issue persists."
-      );
+      // Continue — save to MongoDB so the dataset is accessible. Treasury retry handles deduction.
+      treasuryFailed = true;
     }
   }
 
@@ -152,9 +162,12 @@ export async function uploadDataset(
     datasetHash,
     uploadTimestamp,
     createdAt: uploadTimestamp,
+    monthlyStorageCostWei: monthlyStorageCostWei.toString(),
+    billingStatus: 'active',
+    lastBilledAt: null,
   });
 
-  return { pieceCID, storageCost: costWei.toString() };
+  return { pieceCID, storageCost: costWei.toString(), monthlyStorageCostWei: monthlyStorageCostWei.toString(), treasuryFailed };
 }
 
 /**
@@ -166,7 +179,7 @@ export async function createDatasetVersion(
   ownerWalletAddress: string,
   previousCID: string,
   encrypt?: boolean
-): Promise<{ pieceCID: string; storageCost: string }> {
+): Promise<{ pieceCID: string; storageCost: string; monthlyStorageCostWei: string; treasuryFailed?: boolean }> {
   const existing = await Dataset.findOne({ cid: previousCID });
   if (!existing) throw new Error("Previous CID not found");
   return uploadDataset(fileBuffer, {
@@ -186,7 +199,7 @@ export async function createDatasetVersionByName(
   ownerWalletAddress: string,
   name: string,
   encrypt?: boolean
-): Promise<{ pieceCID: string; storageCost: string }> {
+): Promise<{ pieceCID: string; storageCost: string; monthlyStorageCostWei: string; treasuryFailed?: boolean }> {
   const trimmedName = name.trim();
   const defaultVersion = await Dataset.findOne({ ownerApiKey, name: trimmedName, isDefault: true });
   const latestVersion = defaultVersion ?? (await Dataset.findOne({ ownerApiKey, name: trimmedName }).sort({ createdAt: -1 }));
@@ -270,10 +283,25 @@ export async function ensureVersionBelongsToName(
 /**
  * Retrieve: fetch metadata by CID, get file from Synapse (Filecoin), decompress if needed, decrypt if needed.
  */
-export async function getDatasetByCid(cid: string, ownerApiKey: string): Promise<Buffer> {
+async function checkDatasetAccess(meta: { cid: string; ownerApiKey: string; ownerWalletAddress: string }, ownerApiKey: string, requesterWalletAddress?: string): Promise<void> {
+  if (meta.ownerApiKey === ownerApiKey) return;
+  if (requesterWalletAddress) {
+    const share = await DatasetShare.findOne({
+      datasetCid: meta.cid,
+      sharedWithWalletAddress: requesterWalletAddress.toLowerCase(),
+    });
+    if (share) return;
+  }
+  throw new Error("Unauthorized");
+}
+
+export async function getDatasetByCid(cid: string, ownerApiKey: string, requesterWalletAddress?: string): Promise<Buffer> {
   const meta = await Dataset.findOne({ cid });
   if (!meta) throw new Error("Dataset not found");
-  if (meta.ownerApiKey !== ownerApiKey) throw new Error("Unauthorized");
+  await checkDatasetAccess(meta, ownerApiKey, requesterWalletAddress);
+  if (meta.billingStatus === 'expired') {
+    throw Object.assign(new Error("Dataset access has expired due to insufficient treasury balance. Top up your StorageTreasury balance to restore access."), { code: 'BILLING_EXPIRED' });
+  }
   let raw = await synapseRetrieve(cid);
   if (meta.compressed) {
     raw = decompressFromStorage(raw);
@@ -291,20 +319,26 @@ export async function getDatasetByCid(cid: string, ownerApiKey: string): Promise
 /**
  * Retrieve raw bytes from Filecoin (no decompress, no decrypt). Owner-only. Use to verify what is stored on-chain.
  */
-export async function getDatasetRawByCid(cid: string, ownerApiKey: string): Promise<Buffer> {
+export async function getDatasetRawByCid(cid: string, ownerApiKey: string, requesterWalletAddress?: string): Promise<Buffer> {
   const meta = await Dataset.findOne({ cid });
   if (!meta) throw new Error("Dataset not found");
-  if (meta.ownerApiKey !== ownerApiKey) throw new Error("Unauthorized");
+  await checkDatasetAccess(meta, ownerApiKey, requesterWalletAddress);
+  if (meta.billingStatus === 'expired') {
+    throw Object.assign(new Error("Dataset access has expired due to insufficient treasury balance. Top up your StorageTreasury balance to restore access."), { code: 'BILLING_EXPIRED' });
+  }
   return synapseRetrieve(cid);
 }
 
 /**
  * Get dataset metadata only (no file content).
  */
-export async function getDatasetMetadata(cid: string, ownerApiKey: string) {
+export async function getDatasetMetadata(cid: string, ownerApiKey: string, requesterWalletAddress?: string) {
   const meta = await Dataset.findOne({ cid });
   if (!meta) throw new Error("Dataset not found");
-  if (meta.ownerApiKey !== ownerApiKey) throw new Error("Unauthorized");
+  await checkDatasetAccess(meta, ownerApiKey, requesterWalletAddress);
+  if (meta.billingStatus === 'expired') {
+    throw Object.assign(new Error("Dataset access has expired due to insufficient treasury balance. Top up your StorageTreasury balance to restore access."), { code: 'BILLING_EXPIRED' });
+  }
   return {
     cid: meta.cid,
     name: meta.name ?? undefined,
@@ -320,6 +354,9 @@ export async function getDatasetMetadata(cid: string, ownerApiKey: string) {
     datasetHash: meta.datasetHash ?? "",
     uploadTimestamp: meta.uploadTimestamp ?? meta.createdAt,
     createdAt: meta.createdAt,
+    monthlyStorageCostWei: meta.monthlyStorageCostWei ?? "0",
+    billingStatus: meta.billingStatus ?? "active",
+    lastBilledAt: meta.lastBilledAt ?? null,
   };
 }
 
@@ -337,6 +374,67 @@ export async function deleteDatasetByCid(ownerApiKey: string, cid: string): Prom
 export async function deleteDatasetByName(ownerApiKey: string, name: string): Promise<number> {
   const result = await Dataset.deleteMany({ ownerApiKey, name: name.trim() });
   return result.deletedCount;
+}
+
+// ---- Dataset sharing (ACL) ----
+
+/**
+ * Grant read access to a dataset CID to another wallet address. Owner-only.
+ * Shared wallets can retrieve and (if encrypted) decrypt the dataset.
+ */
+export async function shareDataset(
+  ownerApiKey: string,
+  cid: string,
+  sharedWithWalletAddress: string
+): Promise<void> {
+  const meta = await Dataset.findOne({ cid, ownerApiKey });
+  if (!meta) throw new Error("Dataset not found");
+  const normalized = sharedWithWalletAddress.trim().toLowerCase();
+  if (normalized === meta.ownerWalletAddress.toLowerCase()) {
+    throw new Error("Cannot share with yourself");
+  }
+  try {
+    await DatasetShare.create({
+      datasetCid: cid,
+      ownerWalletAddress: meta.ownerWalletAddress.toLowerCase(),
+      sharedWithWalletAddress: normalized,
+      grantedAt: new Date(),
+    });
+  } catch (err: unknown) {
+    // Ignore duplicate key error (already shared)
+    if ((err as { code?: number })?.code === 11000) return;
+    throw err;
+  }
+}
+
+/**
+ * Revoke read access for a wallet address from a dataset. Owner-only.
+ */
+export async function revokeDatasetShare(
+  ownerApiKey: string,
+  cid: string,
+  sharedWithWalletAddress: string
+): Promise<boolean> {
+  const meta = await Dataset.findOne({ cid, ownerApiKey });
+  if (!meta) throw new Error("Dataset not found");
+  const result = await DatasetShare.deleteOne({
+    datasetCid: cid,
+    sharedWithWalletAddress: sharedWithWalletAddress.trim().toLowerCase(),
+  });
+  return result.deletedCount === 1;
+}
+
+/**
+ * List all wallets that have been granted read access to a dataset. Owner-only.
+ */
+export async function listDatasetShares(ownerApiKey: string, cid: string) {
+  const meta = await Dataset.findOne({ cid, ownerApiKey });
+  if (!meta) throw new Error("Dataset not found");
+  const shares = await DatasetShare.find({ datasetCid: cid }).lean();
+  return shares.map((s) => ({
+    sharedWithWalletAddress: s.sharedWithWalletAddress,
+    grantedAt: s.grantedAt,
+  }));
 }
 
 /**
@@ -359,5 +457,8 @@ export async function listDatasets(ownerApiKey: string) {
     datasetHash: d.datasetHash ?? "",
     uploadTimestamp: d.uploadTimestamp ?? d.createdAt,
     createdAt: d.createdAt,
+    monthlyStorageCostWei: d.monthlyStorageCostWei ?? "0",
+    billingStatus: d.billingStatus ?? "active",
+    lastBilledAt: d.lastBilledAt ?? null,
   }));
 }

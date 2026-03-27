@@ -127,7 +127,7 @@ export async function recordAndDeduct(
     account,
   });
   const publicClient = getPublicClient();
-  await publicClient.waitForTransactionReceipt({ hash });
+  await publicClient.waitForTransactionReceipt({ hash, retryCount: 10, retryDelay: 3000 });
 }
 
 /**

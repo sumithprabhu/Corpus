@@ -21,6 +21,34 @@ export type CreateUserResponse = {
   message?: string;
 };
 
+export type ApiKeyItem = {
+  id: string;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsed: string | null;
+  revokedAt: string | null;
+};
+
+export type ListKeysResponse = {
+  success: true;
+  keys: ApiKeyItem[];
+};
+
+export type CreateKeyResponse = {
+  success: true;
+  id: string;
+  key: string;
+  prefix: string;
+  name: string;
+  createdAt: string;
+};
+
+export type RevokeKeyResponse = {
+  success: true;
+  revoked: true;
+};
+
 // --- Dataset (list item and metadata) ---
 export type DatasetItem = {
   cid: string;
@@ -90,6 +118,13 @@ export type ModelRun = {
   trainingConfigHash?: string | null;
   trainingCodeHash?: string | null;
   provenanceHash: string;
+  ownerWalletAddress?: string;
+  /** Status of the on-chain provenance anchor. */
+  anchorStatus: "none" | "pending" | "anchored" | "failed";
+  /** Transaction hash of the on-chain anchor (self-send with provenanceHash as calldata). */
+  anchorTxHash?: string;
+  /** Block number at which the anchor was confirmed. */
+  anchorBlock?: string;
   createdAt: string;
 };
 
@@ -103,6 +138,31 @@ export type RegisterModelRunInput = {
 export type ModelListResponse = { success: true; modelRuns: ModelRun[] };
 
 export type ModelGetResponse = { success: true } & ModelRun;
+
+// --- Dataset sharing ---
+export type DatasetShareItem = {
+  sharedWithWalletAddress: string;
+  grantedAt: string;
+};
+
+export type ListSharesResponse = {
+  success: true;
+  cid: string;
+  shares: DatasetShareItem[];
+};
+
+export type ShareDatasetResponse = {
+  success: true;
+  cid: string;
+  sharedWith: string;
+};
+
+export type RevokeShareResponse = {
+  success: true;
+  cid: string;
+  walletAddress: string;
+  revoked: boolean;
+};
 
 // --- Treasury ---
 export type TreasuryBalanceResponse = { success: true; balance: string };

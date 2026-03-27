@@ -19,6 +19,10 @@ export async function create(req: Request, res: Response): Promise<void> {
       res.status(400).json({ success: false, error: "walletAddress required" });
       return;
     }
+    if (!/^0x[0-9a-f]{40}$/.test(trimmed)) {
+      res.status(400).json({ success: false, error: "Invalid walletAddress: must be a valid EVM address (0x + 40 hex chars)" });
+      return;
+    }
     let user = await User.findOne({ walletAddress: trimmed });
     if (user) {
       // Ensure there is an ApiKey row for the primary key (for unified key listing).
@@ -74,7 +78,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 export async function listKeys(req: Request, res: Response): Promise<void> {
   try {
     const walletAddress = (req.user!.walletAddress as string).toLowerCase();
-    const keys = await ApiKey.find({ walletAddress }).sort({ createdAt: -1 }).lean();
+    const keys = await ApiKey.find({ walletAddress, key: { $exists: true, $ne: null } }).sort({ createdAt: -1 }).lean();
     res.json({
       success: true,
       keys: keys.map((k) => ({

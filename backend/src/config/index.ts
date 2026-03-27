@@ -42,4 +42,6 @@ export const config = {
     executorAddress: process.env.TREASURY_EXECUTOR_ADDRESS?.trim() ?? null,
     chainId: parseInt(process.env.TREASURY_CHAIN_ID ?? "314159", 10),
   },
+  /** Secret for billing cron endpoint. Set BILLING_SECRET in .env. */
+  billingSecret: process.env.BILLING_SECRET?.trim() ?? null,
 } as const;

@@ -25,6 +25,8 @@ export async function register(req: Request, res: Response): Promise<void> {
       modelArtifactCID,
       trainingConfigHash,
       trainingCodeHash,
+      ownerApiKey: req.user!.apiKey,
+      ownerWalletAddress: req.user!.walletAddress,
     });
     res.status(201).json({ success: true, ...run });
   } catch (e) {
@@ -48,9 +50,11 @@ export async function get(req: Request, res: Response): Promise<void> {
       return;
     }
     const datasetCID = req.query.datasetCID as string | undefined;
-    const list = await modelService.listModelRuns(
-      datasetCID ? { datasetCID } : undefined
-    );
+    const mine = req.query.mine === "1" || req.query.mine === "true";
+    const list = await modelService.listModelRuns({
+      ...(datasetCID && { datasetCID }),
+      ...(mine && { ownerApiKey: req.user!.apiKey }),
+    });
     res.json({ success: true, modelRuns: list });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

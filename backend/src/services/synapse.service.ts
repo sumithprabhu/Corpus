@@ -6,8 +6,35 @@ import { readContract, waitForTransactionReceipt } from "viem/actions";
 import { privateKeyToAccount } from "viem/accounts";
 import { config } from "../config/index.js";
 
-/** Minimum available funds in Pay contract required by storage providers (0.06 USDFC). */
-const MIN_LOCKUP_WEI = 60_000_000_000_000_000n;
+/** Minimum available funds in Pay contract required by storage providers.
+ *  Calibration providers currently require ≥ 0.16 USDFC lockup; use 0.25 for headroom. */
+const MIN_LOCKUP_WEI = 250_000_000_000_000_000n;
+
+// Cache Synapse cost estimates — key is sizeBytes rounded to nearest 1024, TTL 5 minutes
+const costCache = new Map<number, { perMonthWei: bigint; cachedAt: number }>();
+const COST_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Get Synapse estimated monthly storage cost for a given file size.
+ * Cached per 1KB bucket for 5 minutes. Falls back to null if Synapse unavailable.
+ */
+export async function getEstimatedMonthlyCost(sizeBytes: number): Promise<bigint | null> {
+  const bucket = Math.ceil(sizeBytes / 1024) * 1024;
+  const cached = costCache.get(bucket);
+  if (cached && Date.now() - cached.cachedAt < COST_CACHE_TTL_MS) {
+    return cached.perMonthWei;
+  }
+  try {
+    const warmStorage = getWarmStorage();
+    const prep = await warmStorage.prepareStorageUpload({ dataSize: BigInt(Math.max(bucket, 127)) });
+    const perMonthWei = prep.estimatedCost.perMonth;
+    costCache.set(bucket, { perMonthWei, cachedAt: Date.now() });
+    return perMonthWei;
+  } catch (err) {
+    console.warn("[synapse.service] Could not fetch estimated cost:", err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
 
 const MIN_UPLOAD_SIZE = 127;
 
@@ -58,12 +85,13 @@ function getWarmStorage(): WarmStorageService {
 
 /**
  * Upload a dataset buffer to Filecoin via Synapse SDK.
- * Returns the piece CID (used as the dataset identifier in MongoDB and for retrieval).
+ * Returns the piece CID (used as the dataset identifier in MongoDB and for retrieval)
+ * and the Synapse-estimated monthly storage cost in wei.
  */
 export async function uploadDataset(
   buffer: Buffer,
   _walletAddress: string
-): Promise<string> {
+): Promise<{ pieceCid: string; estimatedMonthlyWei: bigint }> {
   if (buffer.length < MIN_UPLOAD_SIZE) {
     throw new Error(
       `Dataset size must be at least ${MIN_UPLOAD_SIZE} bytes (Synapse SDK requirement). Got ${buffer.length}.`
@@ -75,6 +103,9 @@ export async function uploadDataset(
   // Prepare operator: ERC20 approve (if deposit needed) + deposit + service approval so upload succeeds
   const warmStorage = getWarmStorage();
   const prep = await warmStorage.prepareStorageUpload({ dataSize: BigInt(data.byteLength) });
+  const estimatedMonthlyWei = prep.estimatedCost.perMonth;
+  // Cache the cost estimate for this size bucket
+  costCache.set(Math.ceil(data.byteLength / 1024) * 1024, { perMonthWei: estimatedMonthlyWei, cachedAt: Date.now() });
   const hasDeposit = prep.actions.some((a) => a.type === "deposit");
   if (hasDeposit) {
     const { account, chain } = getAccountAndChain();
@@ -128,11 +159,16 @@ export async function uploadDataset(
     console.log(`[synapse.service] Top-up deposit confirmed`);
   }
 
+  // 8-minute hard timeout: Synapse uses infinite retries internally; this prevents
+  // the request from hanging forever if the provider is slow or unreachable.
+  const uploadSignal = AbortSignal.timeout(8 * 60 * 1000);
+
   try {
-    const result = await synapse.storage.upload(data);
+    const result = await synapse.storage.upload(data, { signal: uploadSignal });
     const pieceCid =
       typeof result.pieceCid === "string" ? result.pieceCid : String(result.pieceCid);
-    return pieceCid;
+    console.log(`[synapse.service] Upload succeeded, pieceCid: ${pieceCid}`);
+    return { pieceCid, estimatedMonthlyWei };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[synapse.service] Upload failed:", message);
@@ -148,6 +184,11 @@ export async function uploadDataset(
         "Synapse operator needs USDFC approved for the Filecoin Pay contract. " +
           "The prepare step should approve automatically; if this persists, approve USDFC for the operator wallet. " +
           `Details: ${message}`
+      );
+    }
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error(
+        "Synapse upload timed out after 8 minutes. The storage provider may be slow or unreachable. Try again."
       );
     }
     throw new Error(`Synapse upload failed: ${message}`);

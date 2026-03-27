@@ -22,6 +22,12 @@ export interface IDataset extends Document {
   datasetHash?: string;
   uploadTimestamp?: Date;
   createdAt: Date;
+  /** Monthly storage cost in wei (from Synapse at upload time). Stored as string for bigint precision. */
+  monthlyStorageCostWei?: string;
+  /** Billing status: active = accessible, expired = access revoked due to insufficient balance. */
+  billingStatus?: 'active' | 'expired';
+  /** Last time billing was checked for this dataset. Null = never checked. */
+  lastBilledAt?: Date | null;
 }
 
 const DatasetSchema = new Schema<IDataset>(
@@ -89,12 +95,16 @@ const DatasetSchema = new Schema<IDataset>(
       type: Date,
       default: () => new Date(),
     },
+    monthlyStorageCostWei: { type: String, default: "0" },
+    billingStatus: { type: String, enum: ['active', 'expired'], default: 'active' },
+    lastBilledAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
 
 DatasetSchema.index({ ownerApiKey: 1, createdAt: -1 });
 DatasetSchema.index({ ownerApiKey: 1, name: 1, createdAt: -1 });
+DatasetSchema.index({ billingStatus: 1, ownerWalletAddress: 1 });
 
 export const Dataset: Model<IDataset> =
   mongoose.models.Dataset ?? mongoose.model<IDataset>("Dataset", DatasetSchema);

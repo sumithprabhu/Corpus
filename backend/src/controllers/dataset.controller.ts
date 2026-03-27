@@ -31,6 +31,7 @@ export async function upload(req: Request, res: Response): Promise<void> {
       cid: result.pieceCID,
       name: name ?? undefined,
       storageCost: result.storageCost,
+      ...(result.treasuryFailed && { warning: "treasury_recording_pending" }),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Upload failed";
@@ -49,7 +50,7 @@ export async function upload(req: Request, res: Response): Promise<void> {
  */
 export async function getPrepare(req: Request, res: Response): Promise<void> {
   try {
-    const info = datasetService.getPrepareCost();
+    const info = await datasetService.getPrepareCost();
     res.json({
       success: true,
       debitPerUploadWei: info.debitPerUploadWei,
@@ -71,13 +72,18 @@ export async function getRawByCid(req: Request, res: Response): Promise<void> {
   try {
     const { cid } = req.params;
     const ownerApiKey = req.user!.apiKey;
-    const buffer = await datasetService.getDatasetRawByCid(cid, ownerApiKey);
+    const requesterWalletAddress = req.user!.walletAddress;
+    const buffer = await datasetService.getDatasetRawByCid(cid, ownerApiKey, requesterWalletAddress);
     res.setHeader("Content-Type", "application/octet-stream");
     res.send(buffer);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Not found";
     if (msg === "Dataset not found" || msg === "Unauthorized") {
       res.status(404).json({ success: false, error: msg });
+      return;
+    }
+    if ((e as Error & { code?: string })?.code === 'BILLING_EXPIRED') {
+      res.status(402).json({ success: false, error: msg, code: 'BILLING_EXPIRED' });
       return;
     }
     res.status(500).json({ success: false, error: msg });
@@ -92,18 +98,23 @@ export async function getByCid(req: Request, res: Response): Promise<void> {
     const { cid } = req.params;
     const metadataOnly = req.query.metadata === "1" || req.query.metadata === "true";
     const ownerApiKey = req.user!.apiKey;
+    const requesterWalletAddress = req.user!.walletAddress;
     if (metadataOnly) {
-      const meta = await datasetService.getDatasetMetadata(cid, ownerApiKey);
+      const meta = await datasetService.getDatasetMetadata(cid, ownerApiKey, requesterWalletAddress);
       res.json({ success: true, ...meta });
       return;
     }
-    const buffer = await datasetService.getDatasetByCid(cid, ownerApiKey);
+    const buffer = await datasetService.getDatasetByCid(cid, ownerApiKey, requesterWalletAddress);
     res.setHeader("Content-Type", "application/octet-stream");
     res.send(buffer);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Not found";
     if (msg === "Dataset not found" || msg === "Unauthorized") {
       res.status(404).json({ success: false, error: msg });
+      return;
+    }
+    if ((e as Error & { code?: string })?.code === 'BILLING_EXPIRED') {
+      res.status(402).json({ success: false, error: msg, code: 'BILLING_EXPIRED' });
       return;
     }
     res.status(500).json({ success: false, error: msg });
@@ -185,13 +196,17 @@ export async function getByName(req: Request, res: Response): Promise<void> {
     } else {
       cid = await datasetService.getDefaultCidByName(ownerApiKey, name);
     }
-    const buffer = await datasetService.getDatasetByCid(cid, ownerApiKey);
+    const buffer = await datasetService.getDatasetByCid(cid, ownerApiKey, req.user!.walletAddress);
     res.setHeader("Content-Type", "application/octet-stream");
     res.send(buffer);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Not found";
     if (msg === "Dataset not found" || msg === "Dataset version not found" || msg === "Unauthorized") {
       res.status(404).json({ success: false, error: msg });
+      return;
+    }
+    if ((e as Error & { code?: string })?.code === 'BILLING_EXPIRED') {
+      res.status(402).json({ success: false, error: msg, code: 'BILLING_EXPIRED' });
       return;
     }
     res.status(500).json({ success: false, error: msg });
@@ -242,6 +257,7 @@ export async function addVersionByName(req: Request, res: Response): Promise<voi
       cid: result.pieceCID,
       name,
       storageCost: result.storageCost,
+      ...(result.treasuryFailed && { warning: "treasury_recording_pending" }),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Add version failed";
@@ -316,5 +332,74 @@ export async function deleteByName(req: Request, res: Response): Promise<void> {
       success: false,
       error: e instanceof Error ? e.message : "Delete failed",
     });
+  }
+}
+
+// ---- Dataset sharing (ACL) ----
+
+/**
+ * POST /dataset/:cid/share — Grant read access to a wallet address. Owner-only.
+ * Body: { walletAddress: string }
+ */
+export async function shareDataset(req: Request, res: Response): Promise<void> {
+  try {
+    const { cid } = req.params;
+    const ownerApiKey = req.user!.apiKey;
+    const walletAddress = typeof req.body?.walletAddress === "string" ? req.body.walletAddress.trim() : "";
+    if (!walletAddress) {
+      res.status(400).json({ success: false, error: "walletAddress required" });
+      return;
+    }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+      res.status(400).json({ success: false, error: "Invalid walletAddress: must be a valid EVM address" });
+      return;
+    }
+    await datasetService.shareDataset(ownerApiKey, cid, walletAddress);
+    res.json({ success: true, cid, sharedWith: walletAddress.toLowerCase() });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Share failed";
+    if (msg === "Dataset not found") {
+      res.status(404).json({ success: false, error: msg });
+      return;
+    }
+    res.status(400).json({ success: false, error: msg });
+  }
+}
+
+/**
+ * DELETE /dataset/:cid/share/:walletAddress — Revoke read access for a wallet. Owner-only.
+ */
+export async function revokeShare(req: Request, res: Response): Promise<void> {
+  try {
+    const { cid, walletAddress } = req.params;
+    const ownerApiKey = req.user!.apiKey;
+    const revoked = await datasetService.revokeDatasetShare(ownerApiKey, cid, walletAddress);
+    res.json({ success: true, cid, walletAddress: walletAddress.toLowerCase(), revoked });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Revoke share failed";
+    if (msg === "Dataset not found") {
+      res.status(404).json({ success: false, error: msg });
+      return;
+    }
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+/**
+ * GET /dataset/:cid/shares — List all wallets with read access. Owner-only.
+ */
+export async function listShares(req: Request, res: Response): Promise<void> {
+  try {
+    const { cid } = req.params;
+    const ownerApiKey = req.user!.apiKey;
+    const shares = await datasetService.listDatasetShares(ownerApiKey, cid);
+    res.json({ success: true, cid, shares });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "List shares failed";
+    if (msg === "Dataset not found") {
+      res.status(404).json({ success: false, error: msg });
+      return;
+    }
+    res.status(500).json({ success: false, error: msg });
   }
 }
